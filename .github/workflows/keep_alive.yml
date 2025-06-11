@@ -21,7 +21,7 @@ jobs:
         run: |
           echo "🌐 Pinging Replit server endpoints..."
           # Замените YOUR_REPL_URL на ваш реальный URL
-          REPL_URL="https://your-repl-name.your-username.repl.co"
+          REPL_URL="https://901d4a65-b6ae-469a-9b7d-95406523cba8-00-3nw4m2h4dds8q.sisko.replit.dev"
           
           # Пингуем все ваши эндпоинты
           curl -s "$REPL_URL/health" || echo "⚠️ /health failed"

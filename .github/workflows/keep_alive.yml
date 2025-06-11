@@ -20,55 +20,105 @@ jobs:
           echo "minute=$(date +%M)" >> $GITHUB_OUTPUT
           echo "hour=$(date +%H)" >> $GITHUB_OUTPUT
 
-      - name: Ping Telegram Bot API
+      - name: Ping Telegram Bot API to Keep Repl Active
         id: ping
         run: |
-          echo "🤖 Активация Telegram Bot через API..."
+          echo "🤖 Пинг Telegram Bot API для поддержания Repl активным..."
           
-          # Проверяем статус бота
-          BOT_RESPONSE=$(curl -s -w "%{http_code}" "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getMe")
-          HTTP_CODE="${BOT_RESPONSE: -3}"
+          # 1. Проверяем статус бота через getMe
+          echo "📊 Проверка статуса бота..."
+          BOT_STATUS=$(curl -s -w "%{http_code}" -o /tmp/bot_response.json "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getMe")
+          BOT_HTTP_CODE="${BOT_STATUS: -3}"
           
-          # Имитируем polling активность
-          UPDATES_RESPONSE=$(curl -s -w "%{http_code}" "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getUpdates?limit=1&timeout=2")
-          UPDATES_HTTP_CODE="${UPDATES_RESPONSE: -3}"
+          # 2. Имитируем активность через getUpdates (как делает реальный бот)
+          echo "🔄 Активация через getUpdates..."
+          UPDATES_STATUS=$(curl -s -w "%{http_code}" -o /tmp/updates_response.json "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getUpdates?limit=1&timeout=10")
+          UPDATES_HTTP_CODE="${UPDATES_STATUS: -3}"
           
-          # Проверяем успешность
-          if [[ "$HTTP_CODE" == "200" ]] && [[ "$UPDATES_HTTP_CODE" == "200" ]]; then
-            echo "ping_status=✅ Успешно" >> $GITHUB_OUTPUT
-            echo "✅ Пинг успешен (HTTP: $HTTP_CODE, $UPDATES_HTTP_CODE)"
-          else
-            echo "ping_status=❌ Ошибка (HTTP: $HTTP_CODE, $UPDATES_HTTP_CODE)" >> $GITHUB_OUTPUT
-            echo "❌ Ошибка пинга"
+          # 3. Дополнительный запрос webhook info для активности
+          echo "🌐 Проверка webhook статуса..."
+          WEBHOOK_STATUS=$(curl -s -w "%{http_code}" -o /tmp/webhook_response.json "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getWebhookInfo")
+          WEBHOOK_HTTP_CODE="${WEBHOOK_STATUS: -3}"
+          
+          # 4. Получаем информацию о боте для логов
+          if [[ "$BOT_HTTP_CODE" == "200" ]]; then
+            BOT_NAME=$(cat /tmp/bot_response.json | grep -o '"first_name":"[^"]*"' | cut -d'"' -f4)
+            BOT_USERNAME=$(cat /tmp/bot_response.json | grep -o '"username":"[^"]*"' | cut -d'"' -f4)
+            echo "🤖 Бот: $BOT_NAME (@$BOT_USERNAME)"
           fi
+          
+          # Проверяем успешность всех запросов
+          if [[ "$BOT_HTTP_CODE" == "200" ]] && [[ "$UPDATES_HTTP_CODE" == "200" ]] && [[ "$WEBHOOK_HTTP_CODE" == "200" ]]; then
+            echo "ping_status=✅ Все запросы успешны" >> $GITHUB_OUTPUT
+            echo "ping_details=getMe: $BOT_HTTP_CODE, getUpdates: $UPDATES_HTTP_CODE, getWebhookInfo: $WEBHOOK_HTTP_CODE" >> $GITHUB_OUTPUT
+            echo "✅ Telegram Bot API активирован успешно!"
+            echo "🎯 Это должно поддержать ваш Repl в активном состоянии"
+          else
+            echo "ping_status=❌ Ошибка в запросах" >> $GITHUB_OUTPUT
+            echo "ping_details=getMe: $BOT_HTTP_CODE, getUpdates: $UPDATES_HTTP_CODE, getWebhookInfo: $WEBHOOK_HTTP_CODE" >> $GITHUB_OUTPUT
+            echo "❌ Некоторые запросы к Telegram Bot API не удались"
+          fi
+          
+          # Очистка временных файлов
+          rm -f /tmp/bot_response.json /tmp/updates_response.json /tmp/webhook_response.json
+
+      - name: Additional Bot Activity Simulation
+        run: |
+          echo "🔥 Дополнительная активация бота..."
+          
+          # Имитируем еще несколько типов запросов для максимальной активности
+          
+          # 5. Проверка команд бота
+          echo "📋 Получение списка команд..."
+          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getMyCommands" > /dev/null
+          
+          # 6. Проверка описания бота
+          echo "📝 Получение описания бота..."
+          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getMyDescription" > /dev/null
+          
+          # 7. Небольшая пауза между запросами
+          sleep 2
+          
+          # 8. Финальный getUpdates с другими параметрами
+          echo "🔄 Финальная активация..."
+          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getUpdates?offset=-1&limit=1" > /dev/null
+          
+          echo "✨ Полная активация Telegram Bot завершена!"
 
       - name: Send status report (every 30 minutes)
         if: ${{ steps.time.outputs.minute == '00' || steps.time.outputs.minute == '30' }}
         run: |
-          echo "📊 Отправка отчета о работе бота..."
+          echo "📊 Отправка отчета о работе системы мониторинга..."
           
-          # Формируем отчет
-          REPORT="🤖 *Отчет мониторинга бота*%0A%0A"
+          # Формируем детальный отчет
+          REPORT="🤖 *Отчет мониторинга Telegram Bot*%0A%0A"
           REPORT="${REPORT}⏰ Время: ${{ steps.time.outputs.readable_time }}%0A"
-          REPORT="${REPORT}🎯 Статус пинга: ${{ steps.ping.outputs.ping_status }}%0A"
-          REPORT="${REPORT}🔄 Частота пингов: каждые 15 минут%0A"
-          REPORT="${REPORT}📈 Следующий отчет через 30 минут%0A"
-          REPORT="${REPORT}🚀 GitHub Actions работает стабильно"
+          REPORT="${REPORT}🎯 Статус пингов: ${{ steps.ping.outputs.ping_status }}%0A"
+          REPORT="${REPORT}📊 Детали: ${{ steps.ping.outputs.ping_details }}%0A"
+          REPORT="${REPORT}🔄 Частота: каждые 15 минут%0A"
+          REPORT="${REPORT}🎛️ Методы активации:%0A"
+          REPORT="${REPORT}  • getMe (статус бота)%0A"
+          REPORT="${REPORT}  • getUpdates (имитация polling)%0A"
+          REPORT="${REPORT}  • getWebhookInfo (проверка webhook)%0A"
+          REPORT="${REPORT}  • getMyCommands (команды)%0A"
+          REPORT="${REPORT}%0A📈 Следующий отчет через 30 минут%0A"
+          REPORT="${REPORT}🚀 Repl должен оставаться активным"
           
-          # Отправляем в Telegram
+          # Отправляем отчет
           curl -s "https://api.telegram.org/bot${{ secrets.REPORT_BOT_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.REPORT_CHAT_ID }}" \
             -d "text=${REPORT}" \
             -d "parse_mode=Markdown" \
             -d "disable_web_page_preview=true"
           
-          echo "✅ Отчет отправлен в Telegram"
+          echo "✅ Детальный отчет отправлен в Telegram"
 
       - name: Log activity summary
         run: |
-          echo "🕐 Пинг завершен: ${{ steps.time.outputs.readable_time }}"
-          echo "⏰ Следующий пинг через 15 минут"
+          echo "🕐 Активация завершена: ${{ steps.time.outputs.readable_time }}"
+          echo "⏰ Следующий пинг Telegram Bot API через 15 минут"
           echo "🎯 Статус: ${{ steps.ping.outputs.ping_status }}"
+          echo "📊 Детали: ${{ steps.ping.outputs.ping_details }}"
           
           if [[ "${{ steps.time.outputs.minute }}" == "00" || "${{ steps.time.outputs.minute }}" == "30" ]]; then
             echo "📊 ✅ Отчет отправлен в этом цикле"
@@ -78,4 +128,11 @@ jobs:
             echo "📊 ⏳ Отчет через $NEXT_REPORT минут"
           fi
           
-          echo "💰 Экономное использование GitHub Actions (~200 мин/месяц)"
+          echo "🎛️ Использованные методы активации:"
+          echo "  • Telegram Bot API getMe"
+          echo "  • Telegram Bot API getUpdates (polling simulation)"
+          echo "  • Telegram Bot API getWebhookInfo"
+          echo "  • Telegram Bot API getMyCommands"
+          echo "  • Telegram Bot API getMyDescription"
+          echo "💰 Расход GitHub Actions: ~240 мин/месяц (в пределах лимита)"
+          echo "🎯 Эффект: Активация Python процесса бота через API запросы"

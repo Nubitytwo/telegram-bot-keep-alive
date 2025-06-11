@@ -1,1 +1,44 @@
 
+name: Keep Bot Alive
+on:
+  schedule:
+    # Запуск каждые 15 минут
+    - cron: '*/15 * * * *'
+  # Разрешить ручной запуск из интерфейса GitHub
+  workflow_dispatch:
+
+jobs:
+  ping-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Telegram Bot API
+        run: |
+          echo "🤖 Pinging Telegram Bot API..."
+          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getMe" > /dev/null
+          echo "✅ Telegram API ping completed"
+
+      - name: Ping Replit server endpoints
+        run: |
+          echo "🌐 Pinging Replit server endpoints..."
+          # Замените YOUR_REPL_URL на ваш реальный URL
+          REPL_URL="https://your-repl-name.your-username.repl.co"
+          
+          # Пингуем все ваши эндпоинты
+          curl -s "$REPL_URL/health" || echo "⚠️ /health failed"
+          sleep 2
+          curl -s "$REPL_URL/keepalive" || echo "⚠️ /keepalive failed"
+          sleep 2
+          curl -s "$REPL_URL/ping" || echo "⚠️ /ping failed"
+          sleep 2
+          curl -s "$REPL_URL/status" || echo "⚠️ /status failed"
+          sleep 2
+          curl -s "$REPL_URL/activity" || echo "⚠️ /activity failed"
+          sleep 2
+          curl -s "$REPL_URL/heartbeat" || echo "⚠️ /heartbeat failed"
+          
+          echo "✅ All endpoint pings completed"
+
+      - name: Log completion
+        run: |
+          echo "🕐 Keep alive completed at $(date)"
+          echo "📊 Next run in 15 minutes"

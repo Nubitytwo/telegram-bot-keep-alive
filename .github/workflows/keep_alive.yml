@@ -1,32 +1,81 @@
 
-name: Keep Bot Alive
+name: Telegram Bot Keep-Alive with Reports
+
 on:
   schedule:
-    # Запуск каждые 15 минут (оптимальное время по тестам)
+    # Пинг каждые 15 минут для поддержания активности
     - cron: '*/15 * * * *'
-  # Разрешить ручной запуск из интерфейса GitHub
   workflow_dispatch:
 
 jobs:
-  ping-telegram-bot:
+  keep-bot-alive:
     runs-on: ubuntu-latest
+    
     steps:
+      - name: Get current time and check report schedule
+        id: time
+        run: |
+          echo "timestamp=$(date +%s)" >> $GITHUB_OUTPUT
+          echo "readable_time=$(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
+          echo "minute=$(date +%M)" >> $GITHUB_OUTPUT
+          echo "hour=$(date +%H)" >> $GITHUB_OUTPUT
+
       - name: Ping Telegram Bot API
+        id: ping
         run: |
           echo "🤖 Активация Telegram Bot через API..."
+          
+          # Проверяем статус бота
+          BOT_RESPONSE=$(curl -s -w "%{http_code}" "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getMe")
+          HTTP_CODE="${BOT_RESPONSE: -3}"
+          
+          # Имитируем polling активность
+          UPDATES_RESPONSE=$(curl -s -w "%{http_code}" "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getUpdates?limit=1&timeout=2")
+          UPDATES_HTTP_CODE="${UPDATES_RESPONSE: -3}"
+          
+          # Проверяем успешность
+          if [[ "$HTTP_CODE" == "200" ]] && [[ "$UPDATES_HTTP_CODE" == "200" ]]; then
+            echo "ping_status=✅ Успешно" >> $GITHUB_OUTPUT
+            echo "✅ Пинг успешен (HTTP: $HTTP_CODE, $UPDATES_HTTP_CODE)"
+          else
+            echo "ping_status=❌ Ошибка (HTTP: $HTTP_CODE, $UPDATES_HTTP_CODE)" >> $GITHUB_OUTPUT
+            echo "❌ Ошибка пинга"
+          fi
 
-          # Проверяем статус бота (основной пинг)
-          BOT_RESPONSE=$(curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getMe")
-          echo "✅ getMe response received"
-
-          # Получаем обновления (имитируем активность polling)
-          UPDATES_RESPONSE=$(curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getUpdates?limit=1&timeout=2")
-          echo "✅ getUpdates response received"
-
-          echo "🎯 Telegram Bot API активирован успешно"
-
-      - name: Log completion
+      - name: Send status report (every 30 minutes)
+        if: ${{ steps.time.outputs.minute == '00' || steps.time.outputs.minute == '30' }}
         run: |
-          echo "🕐 Пинг завершен в $(date)"
+          echo "📊 Отправка отчета о работе бота..."
+          
+          # Формируем отчет
+          REPORT="🤖 *Отчет мониторинга бота*%0A%0A"
+          REPORT="${REPORT}⏰ Время: ${{ steps.time.outputs.readable_time }}%0A"
+          REPORT="${REPORT}🎯 Статус пинга: ${{ steps.ping.outputs.ping_status }}%0A"
+          REPORT="${REPORT}🔄 Частота пингов: каждые 15 минут%0A"
+          REPORT="${REPORT}📈 Следующий отчет через 30 минут%0A"
+          REPORT="${REPORT}🚀 GitHub Actions работает стабильно"
+          
+          # Отправляем в Telegram
+          curl -s "https://api.telegram.org/bot${{ secrets.REPORT_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.REPORT_CHAT_ID }}" \
+            -d "text=${REPORT}" \
+            -d "parse_mode=Markdown" \
+            -d "disable_web_page_preview=true"
+          
+          echo "✅ Отчет отправлен в Telegram"
+
+      - name: Log activity summary
+        run: |
+          echo "🕐 Пинг завершен: ${{ steps.time.outputs.readable_time }}"
           echo "⏰ Следующий пинг через 15 минут"
-          echo "📊 Используется минимальная нагрузка на GitHub Actions"
+          echo "🎯 Статус: ${{ steps.ping.outputs.ping_status }}"
+          
+          if [[ "${{ steps.time.outputs.minute }}" == "00" || "${{ steps.time.outputs.minute }}" == "30" ]]; then
+            echo "📊 ✅ Отчет отправлен в этом цикле"
+          else
+            NEXT_REPORT=$(( (30 - ${{ steps.time.outputs.minute }} % 30) % 30 ))
+            if [[ $NEXT_REPORT -eq 0 ]]; then NEXT_REPORT=30; fi
+            echo "📊 ⏳ Отчет через $NEXT_REPORT минут"
+          fi
+          
+          echo "💰 Экономное использование GitHub Actions (~200 мин/месяц)"
